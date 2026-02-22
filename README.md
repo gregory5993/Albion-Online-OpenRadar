@@ -19,6 +19,18 @@
   </a>
 </p>
 
+> ### ⏸️ Project on pause
+>
+> Hey. Taking a break from this for a while, personal health stuff.
+>
+> I see the comments, the downloads, the messages. I built this for myself at first and seeing how many people actually use it is kind of wild. Thanks for that, really.
+>
+> Haven't tested it in a while so if the game updated and things broke, I haven't seen it yet. I'll get back to it when I can.
+>
+> Take care. ❤️
+>
+> -- Nouuu
+
 https://github.com/user-attachments/assets/33fe1ac7-11f2-4c3c-a91c-0ab42ebdda7d
 
 ---
@@ -227,7 +239,7 @@ The 84 MB localization file? Gone. Minified JSONs keep only what the radar needs
 | Tool    | Version | Notes                  |
 |---------|---------|------------------------|
 | Go      | 1.25+   | Backend                |
-| Npcap   | 1.84+   | Windows packet capture 
+| Npcap   | 1.84+   | Windows packet capture |
 | libpcap | Latest  | Linux packet capture   |
 | Node.js | 20+     | Build scripts only     |
 | Docker  | Latest  | Linux cross-compile    |
