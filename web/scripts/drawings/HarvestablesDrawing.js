@@ -24,7 +24,7 @@ export class HarvestablesDrawing extends DrawingUtils  {
             if (harvestableOne.stringType) {
                 const st = harvestableOne.stringType.toLowerCase();
                 if (st === 'log' || st === 'wood' || st === 'logs') {
-                    draw = "Logs_" + harvestableOne.tier + "_" + harvestableOne.charges;
+                    draw = "log_" + harvestableOne.tier + "_" + harvestableOne.charges;
                 } else if (st === 'rock') {
                     draw = "rock_" + harvestableOne.tier + "_" + harvestableOne.charges;
                 } else if (st === 'fiber') {
@@ -49,7 +49,7 @@ export class HarvestablesDrawing extends DrawingUtils  {
             if (!draw) {
                 const type = harvestableOne.type;
                 if (type >= 0 && type <= 5) {
-                    draw = "Logs_" + harvestableOne.tier + "_" + harvestableOne.charges;
+                    draw = "log_" + harvestableOne.tier + "_" + harvestableOne.charges;
                 } else if (type >= 6 && type <= 10) {
                     draw = "rock_" + harvestableOne.tier + "_" + harvestableOne.charges;
                 } else if (type >= 11 && type <= 15) {

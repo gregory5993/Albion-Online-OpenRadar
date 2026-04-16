@@ -34,21 +34,22 @@ const (
 	shutdownTimeout = 10 * time.Second
 )
 
-// App holds all application components
 type App struct {
-	ctx        context.Context
-	cancel     context.CancelFunc
-	wg         sync.WaitGroup
-	logger     *logger.Logger
-	httpServer *server.HTTPServer
-	wsHandler  *server.WebSocketHandler
-	capturer   *capture.Capturer
-	program    *tea.Program
-	adapterIP  string
+	ctx          context.Context
+	cancel       context.CancelFunc
+	wg           sync.WaitGroup
+	logger       *logger.Logger
+	httpServer   *server.HTTPServer
+	wsHandler    *server.WebSocketHandler
+	capturer     *capture.Capturer
+	photonParser *photon.PhotonParser
+	program      *tea.Program
+	adapterIP    string
 
 	// Packet statistics (atomic for thread safety)
 	packetsProcessed uint64
 	packetsErrors    uint64
+	packetsEncrypted uint64
 
 	// Server status (atomic for thread safety)
 	httpRunning    int32
@@ -187,6 +188,12 @@ func newApp(
 		httpServer: httpServer,
 		capturer:   capturer,
 	}
+	app.photonParser = photon.NewPhotonParser(
+		app.onPhotonEvent,
+		app.onPhotonRequest,
+		app.onPhotonResponse,
+	)
+	app.photonParser.OnEncrypted = app.onPhotonEncrypted
 
 	app.capturer.OnPacket(app.handlePacket)
 
@@ -299,61 +306,41 @@ func (app *App) updateStats() {
 }
 
 func (app *App) handlePacket(payload []byte) {
-	packet, err := photon.ParsePacket(payload)
-	if err != nil {
+	if !app.photonParser.ReceivePacket(payload) {
 		atomic.AddUint64(&app.packetsErrors, 1)
 		errCount := atomic.LoadUint64(&app.packetsErrors)
-		// Log only every 100 errors to avoid spam
 		if errCount%100 == 1 {
-			logger.PrintWarn("PKT", "Parsing errors: %d (latest: %v)", errCount, err)
+			logger.PrintWarn("PKT", "Parsing errors: %d", errCount)
 		}
 		return
 	}
-	if packet == nil {
-		return
-	}
-
 	atomic.AddUint64(&app.packetsProcessed, 1)
-	for _, cmd := range packet.Commands {
-		app.processCommand(cmd)
-	}
 }
 
-func (app *App) processCommand(cmd *photon.Command) {
-	if cmd.Payload == nil {
-		return
-	}
-
-	// DEBUG: Log command info to understand different paths
-	app.logger.Debug("CMD_CAPTURE", fmt.Sprintf("CmdType_%d_MsgType_%d", cmd.CommandType, cmd.MessageType), map[string]interface{}{
-		"commandType": cmd.CommandType,
-		"messageType": cmd.MessageType,
-		"channelID":   cmd.ChannelID,
+func (app *App) onPhotonEvent(event *photon.EventData) {
+	photon.PostProcessEvent(event)
+	realCode := event.Parameters[252]
+	app.logger.Debug("EVENT_CAPTURE", fmt.Sprintf("Event_%v", realCode), map[string]interface{}{
+		"code":       realCode,
+		"paramCount": len(event.Parameters),
 	}, nil)
+	app.wsHandler.BroadcastEvent(event)
+}
 
-	switch cmd.MessageType {
-	case photon.MessageTypeEvent:
-		event, err := photon.DeserializeEvent(cmd.Payload)
-		if err != nil {
-			app.logger.Warn("EVENT_ERROR", "DeserializeEvent_Failed", map[string]interface{}{
-				"error":       err.Error(),
-				"commandType": cmd.CommandType,
-			}, nil)
-			return
-		}
-		app.logger.Debug("EVENT_CAPTURE", fmt.Sprintf("Event_%d", event.Code), map[string]interface{}{
-			"code":       event.Code,
-			"paramCount": len(event.Parameters),
-		}, nil)
-		app.wsHandler.BroadcastEvent(event)
-	case photon.MessageTypeRequest:
-		if req, err := photon.DeserializeRequest(cmd.Payload); err == nil {
-			app.wsHandler.BroadcastRequest(req)
-		}
-	case photon.MessageTypeResponse:
-		if resp, err := photon.DeserializeResponse(cmd.Payload); err == nil {
-			app.wsHandler.BroadcastResponse(resp)
-		}
+func (app *App) onPhotonRequest(req *photon.OperationRequest) {
+	photon.PostProcessRequest(req)
+	app.wsHandler.BroadcastRequest(req)
+}
+
+func (app *App) onPhotonResponse(resp *photon.OperationResponse) {
+	photon.PostProcessResponse(resp)
+	app.wsHandler.BroadcastResponse(resp)
+}
+
+func (app *App) onPhotonEncrypted() {
+	n := atomic.AddUint64(&app.packetsEncrypted, 1)
+	if n%100 == 1 {
+		logger.PrintWarn("PKT", "Encrypted traffic seen (%d so far, ignored)", n)
 	}
 }
 

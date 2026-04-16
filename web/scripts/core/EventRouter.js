@@ -285,8 +285,7 @@ export function onEvent(Parameters) {
 }
 
 export function onRequest(Parameters) {
-    // Player moving - Operation 21 is for LOCAL PLAYER ONLY
-    if (Parameters[253] == 21) {
+    if (Parameters[253] == 21 || Parameters[253] == 22) {
         if (Array.isArray(Parameters[1]) && Parameters[1].length === 2) {
             updateLocalPlayerPosition(Parameters[1][0], Parameters[1][1]);
             window.logger?.debug(CATEGORIES.PLAYERS, 'Operation21_LocalPlayer', {lpX, lpY});
@@ -306,7 +305,37 @@ export function onRequest(Parameters) {
 }
 
 export function onResponse(Parameters, clearHandlersCallback) {
-    // Player change cluster
+    if (Parameters[253] == 41) {
+        const newMapId = Parameters[0];
+        if (typeof newMapId === 'string' && newMapId.length > 0 && newMapId !== map.id) {
+            const previousMapId = map.id;
+            map.id = newMapId;
+            window.currentMapId = map.id;
+            lastMapChangeTime = Date.now();
+            radarRenderer?.setMap?.(map);
+
+            try {
+                sessionStorage.setItem('lastMapDisplayed', JSON.stringify({
+                    mapId: map.id,
+                    hX: map.hX,
+                    hY: map.hY,
+                    isBZ: map.isBZ,
+                    timestamp: Date.now()
+                }));
+            } catch (e) {
+                window.logger?.warn(CATEGORIES.MAP, 'SessionStorageFailed', {error: e?.message});
+            }
+
+            window.logger?.info(CATEGORIES.MAP, 'ChangeClusterResponse', {
+                previousMapId,
+                newMapId: map.id
+            });
+
+            clearHandlersCallback();
+        }
+        return;
+    }
+
     if (Parameters[253] == 35) {
         const newMapId = Parameters[0];
         const now = Date.now();
@@ -372,7 +401,31 @@ export function onResponse(Parameters, clearHandlersCallback) {
             });
         }
 
-        map.isBZ = Parameters[103] == 2;
+        if (typeof Parameters[8] === 'string' && Parameters[8].length > 0) {
+            const previousMapId = map.id;
+            map.id = Parameters[8];
+            window.currentMapId = map.id;
+            lastMapChangeTime = Date.now();
+            radarRenderer?.setMap?.(map);
+
+            try {
+                sessionStorage.setItem('lastMapDisplayed', JSON.stringify({
+                    mapId: map.id,
+                    hX: map.hX,
+                    hY: map.hY,
+                    isBZ: map.isBZ,
+                    timestamp: Date.now()
+                }));
+            } catch (e) {
+                window.logger?.warn(CATEGORIES.MAP, 'SessionStorageFailed', {error: e?.message});
+            }
+
+            window.logger?.info(CATEGORIES.MAP, 'MapChangedFromJoinMap', {
+                previousMapId,
+                newMapId: map.id
+            });
+        }
+
         clearHandlersCallback();
     } else if (Parameters[253] == 137) {
         // Character stats response - not currently used

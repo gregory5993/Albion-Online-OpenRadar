@@ -39,6 +39,9 @@ jobs:
       - name: Lint Frontend
         run: npm run lint
 
+      - name: Test Frontend
+        run: npm test
+
       - name: Test Go
         run: go test -v ./...
 

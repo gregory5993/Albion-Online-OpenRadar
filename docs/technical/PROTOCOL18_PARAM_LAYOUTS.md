@@ -1,0 +1,93 @@
+# Protocol18 Event Parameter Layouts (observed)
+
+Status: snapshot from a single live capture (T5 zone + harvest + zone transit,
+~130s, 3020 packets, 4954 events decoded). Use as baseline for regression tests
+and frontend compatibility checks. Expect shifts when Albion patches gameplay
+payload layouts.
+
+## Convention
+
+- **Dispatch byte** (`EventData.Code`): the 1-byte event selector read from the
+  wire. Under Protocol18 Albion only uses two dispatch bytes: `3` (Move, hot
+  path) and `1` (generic, real code in `params[252]`).
+- **Real code** (`params[252]` as `int16`): the authoritative Albion event ID.
+  74 distinct codes observed in this capture.
+- **Frontend truth**: `web/scripts/core/EventRouter.js:117` routes on
+  `params[252]`. Backend logs follow the same convention
+  (`cmd/radar/main.go:onPhotonEvent`).
+
+## Dispatch byte 3 — Move
+
+```
+params[  0] int64            entity id
+params[  1] ByteArray        raw 30-byte (mode=3) or 22-byte (mode=4) blob
+params[  4] float32          posX, injected by PostProcessEvent (offset 9 of params[1])
+params[  5] float32          posY, injected by PostProcessEvent (offset 13 of params[1])
+params[252] byte(3)          fallback-injected by PostProcessEvent (server omits)
+```
+
+**Notes:**
+- Mobs/resources: `params[1][0] == 3`, positions at offsets 9/13 are unencrypted.
+- Players: `params[1][0] == 3` too, but positions at offsets 9/13 are XOR-encrypted
+  with the KeySync `XorCode` (unreadable without MITM, cf. `PLAYER_POSITIONS_MITM.md`).
+- Mode 4 (22-byte) never has positions; the `len(raw) < 17` guard handles it.
+
+## Dispatch byte 1 — Generic (real code in `params[252]`)
+
+Representative layouts observed:
+
+| Real code | Purpose (guess from context) | Notable params |
+|-----------|------------------------------|----------------|
+| 1         | Leave                        | `params[0]` int64 entity id only |
+| 6         | HealthUpdate (single)        | `params[2..3]` float32 HP, `params[6]` int64 attacker |
+| 8         | HealthUpdate (alt)           | `params[2..3]` float32, similar shape |
+| 11        | HealthUpdates (bulk)         | `params[1..10]` mixed arrays + ByteArrays |
+| 14        | ?                            | `params[2]` `[]float32`, `params[8..9]` uint8 (flags) |
+| 19        | ?                            | `params[2]` `[]float32`, `params[7]` int16 |
+| 22        | ?                            | `params[1]` `[]int32`, `params[3..4]` ByteArray |
+| 29        | NewCharacter (player spawn)  | `params[1]` string (name), `params[5..7,16,17]` ByteArray, `params[19..37]` float32 stats |
+| 30        | ?                            | `params[5]` string, `params[8]` ByteArray, `params[9]` `[]int16`/ByteArray |
+| 39        | NewHarvestableObjectList     | `params[0]` `[]int16` batch ids, `params[3]` `[]float32` batch positions |
+| 40        | NewMob (probable)            | `params[8]` **`[]float32`** packed X/Y, `params[9]` `float32` scalar (rotation?) |
+| 91        | ?                            | `params[2..3,5]` float32, `params[6]` int64 |
+
+**⚠️ Frontend discrepancy (pre-existing, not caused by this port):**
+
+`web/scripts/handlers/MobsHandler.js:124-125` reads:
+```js
+posX: parameters[8],
+posY: parameters[9],
+```
+
+For real code 40, `params[8]` is a **`[]float32` array** (packed X and Y
+together) and `params[9]` is a **scalar `float32`**. Assigning `parameters[8]`
+to `posX` would set it to the whole array, not a scalar number. This would
+mis-place every mob spawned via this event.
+
+Upstream `ao-data/albiondata-client@0.1.51` and
+`Triky313/AlbionOnline-StatisticsAnalysis@v8.7.0` both decode this wire shape
+identically (typed array of floats → native slice). The divergence is between
+the game server's wire format and the OpenRadar frontend's expectation, not
+between our port and the reference implementations.
+
+**Resolution path:** adjust `MobsHandler.js` to read positions from the
+`[]float32` array (something like `posX: parameters[8][0], posY: parameters[8][1]`),
+or verify which event code actually feeds the mob-add path and whether it has
+a different layout. Validate visually in Task 22 (manual E2E).
+
+## Gaps in this snapshot
+
+- No combat events (Cast*, Damage*) — single idle+harvest scenario
+- No JoinResponse (zone transit happened once; only real code 0 response
+  observed, 1 sample)
+- Only 2 fragments in the capture — fragment reassembly exercised in
+  `TestPhotonParser_Fragment_*` unit tests instead
+- `msg_type 132` (53 occurrences) and `130` (3) silently dropped — not event
+  / request / response. Proximity to `msgEncrypted=131` suggests encrypted
+  variants. Worth investigating when more captures arrive.
+
+## How to regenerate this document
+
+Feed a new pcap through the analyzer pattern documented in the PR description
+for issue #49. Compare the resulting layout table with this snapshot to detect
+protocol drift across patches.

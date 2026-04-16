@@ -58,6 +58,27 @@ export default [
         }
     },
 
+    // Vitest test files (co-located under web/scripts/)
+    {
+        files: ["web/scripts/**/*.test.js"],
+        languageOptions: {
+            ecmaVersion: 2022,
+            sourceType: "module",
+            globals: {
+                ...browserGlobals,
+                describe: "readonly",
+                test: "readonly",
+                it: "readonly",
+                expect: "readonly",
+                beforeEach: "readonly",
+                afterEach: "readonly",
+                beforeAll: "readonly",
+                afterAll: "readonly",
+                vi: "readonly"
+            }
+        }
+    },
+
     // Go HTML templates - JavaScript linting inside <script> tags
     {
         files: ["internal/templates/**/*.gohtml"],

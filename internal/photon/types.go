@@ -1,63 +1,39 @@
 package photon
 
-import "github.com/segmentio/encoding/json"
+import "strconv"
 
-// ByteArray wraps []byte to serialize like Node.js Buffer
+// ByteArray serializes as {"type":"Buffer","data":[...]} because the web
+// front-end parses byte arrays assuming the Node.js Buffer shape.
 type ByteArray []byte
 
-// MarshalJSON serializes ByteArray as {"type": "Buffer", "data": [1, 2, 3, ...]}
 func (b ByteArray) MarshalJSON() ([]byte, error) {
-	// Convert to array of numbers (like Node.js Buffer)
-	data := make([]int, len(b))
+	const prefix = `{"type":"Buffer","data":[`
+	const suffix = `]}`
+	out := make([]byte, 0, len(prefix)+len(suffix)+4*len(b))
+	out = append(out, prefix...)
 	for i, v := range b {
-		data[i] = int(v)
+		if i > 0 {
+			out = append(out, ',')
+		}
+		out = strconv.AppendUint(out, uint64(v), 10)
 	}
-	return json.Marshal(map[string]interface{}{
-		"type": "Buffer",
-		"data": data,
-	})
+	out = append(out, suffix...)
+	return out, nil
 }
 
-// Protocol16 type codes
-const (
-	TypeUnknown           = 0
-	TypeNull              = 42
-	TypeDictionary        = 68  // 'D'
-	TypeStringArray       = 97  // 'a'
-	TypeByte              = 98  // 'b'
-	TypeDouble            = 100 // 'd'
-	TypeEventData         = 101 // 'e'
-	TypeFloat             = 102 // 'f'
-	TypeInteger           = 105 // 'i'
-	TypeHashtable         = 104 // 'h'
-	TypeShort             = 107 // 'k'
-	TypeLong              = 108 // 'l'
-	TypeIntegerArray      = 110 // 'n'
-	TypeBoolean           = 111 // 'o'
-	TypeOperationResponse = 112 // 'p'
-	TypeOperationRequest  = 113 // 'q'
-	TypeString            = 115 // 's'
-	TypeByteArray         = 120 // 'x'
-	TypeArray             = 121 // 'y'
-	TypeObjectArray       = 122 // 'z'
-)
-
-// EventData represents a deserialized Photon event
 type EventData struct {
-	Code       int
-	Parameters map[int]interface{}
+	Code       byte
+	Parameters map[byte]interface{}
 }
 
-// OperationRequest represents a deserialized Photon request
 type OperationRequest struct {
-	OperationCode int
-	Parameters    map[int]interface{}
+	OperationCode byte
+	Parameters    map[byte]interface{}
 }
 
-// OperationResponse represents a deserialized Photon response
 type OperationResponse struct {
-	OperationCode int
-	ReturnCode    int
-	DebugMessage  interface{}
-	Parameters    map[int]interface{}
+	OperationCode byte
+	ReturnCode    int16
+	DebugMessage  string
+	Parameters    map[byte]interface{}
 }
